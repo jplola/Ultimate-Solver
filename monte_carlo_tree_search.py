@@ -3,6 +3,7 @@ from joblib import Parallel, delayed
 from copy import deepcopy
 from Simple_Simulator import SimpleTicTacToe
 from UltimateToeFile import UltimateToe
+from multiprocessing import cpu_count
 
 
 class SearchTreeNode:
@@ -18,22 +19,63 @@ class SearchTreeNode:
         self.total_reward = 0
         self.untried_moves = [move for move in state.get_legal_moves()]
         self.is_terminal = state.is_terminal()
+        self.class_type = sim_class
         if state.turns:
             self.current_player = state.turns[-1]
         # self.current_player = 1
 
+    # Merging two trees (self and other) into a new tree
+    def merge_trees(self, other):
+        """
+        Merges the current tree with another tree (other) and returns the merged tree.
+        It assumes both trees are of the same game state at the root.
+        """
+        # if self.state != other.state:
+        #    raise ValueError("Cannot merge trees with different root states.")
+
+        # Create a new node for the merged tree
+        merged_node = SearchTreeNode(self.state, self.parent, sim_class=self.class_type)
+
+        # Sum up visits and rewards
+        merged_node.visits = self.visits + other.visits
+        merged_node.total_reward = self.total_reward + other.total_reward
+
+        # Merge children recursively
+        all_children_states = sorted(set(self.children.keys()).union(other.children.keys()))
+        for child_state in all_children_states:
+            if child_state in self.children and child_state in other.children:
+                # Both trees have this child, merge them recursively
+                merged_node.children[child_state] = self.children[child_state].merge_trees(
+                    other.children[child_state])
+            elif child_state in self.children:
+                # Only the current tree has this child
+                merged_node.children[child_state] = self.children[child_state]
+            else:
+                # Only the other tree has this child
+                merged_node.children[child_state] = other.children[child_state]
+
+        return merged_node
+
     def value(self):
         return self.total_reward / self.visits
 
-    def get_state_probabilities(self):
-        all_moves = np.zeros((3, 3))
+    @staticmethod
+    def get_state_probabilities(root):
+        probabilities = np.zeros((9, 9))
 
-        possible_moves = self.children.keys()
-        total_visits = self.visits
-        for elem in possible_moves:
-            row, col = divmod(elem, 3)
-            all_moves[row, col] = self.children[elem].visits / total_visits
-        return all_moves
+        total_visits = root.visits
+        for move in root.children.keys():
+            big_row, big_col = divmod(move[0], 3)
+            small_row, small_col = divmod(move[1], 3)
+            current_subboard = probabilities[big_row * 3: big_row * 3 + 3, big_col * 3: big_col * 3 + 3]
+
+            current_subboard[small_row, small_col] = root.children[move].visits / total_visits
+
+        return probabilities
+
+    def get_best_move(self):
+        best_move = max(self.children.keys(), key=lambda move: self.children[move].visits)
+        return best_move
 
 
 def ucb1(node, c=np.sqrt(2)):  # c is the exploration constant (sqrt(2) is common)
@@ -53,7 +95,9 @@ def select_best_node(node, c=np.sqrt(2)):
 
 def expand_node(node, sim_class):
     if node.state.get_legal_moves() or not node.state.is_terminal():
-        move = node.untried_moves.pop()
+        index = np.random.choice(np.arange(len(node.untried_moves)))
+        move = node.untried_moves[index]
+        node.untried_moves.remove(move)
 
         next_state = sim_class(deepcopy(node.state).step_forward(move))
 
@@ -64,133 +108,141 @@ def expand_node(node, sim_class):
     return None
 
 
-def simulate(state, simulations, sim_class):
-    rewards = 0
-    game = sim_class(state)
-    for i in range(simulations):
-        game.reset(state)
-        rewards += game.simulate()
+def simulate(state, simulations, sim_class, parallel_sim=None):
+    if parallel_sim is None:
+        parallel_sim = simulations >= 5000  # noted that it is beneficial to simulate in parallel when
+        # the number of simulations is above 5000
 
-    rewards /= simulations
+    def direct_simulations(state, simulations, sim_class_=sim_class):
+        rewards = 0
+        game = sim_class_(state)
+        for i in range(simulations):
+            game.reset(state)
+            rewards += game.simulate()
+        return rewards
 
-    return rewards  # Returns 1, -1, or draw
+    if not parallel_sim:
+        rewards = direct_simulations(state, simulations, sim_class_=sim_class)
+    else:
+        batch_size = 1000
+
+        def sim(state):
+            rewards = direct_simulations(state, batch_size, sim_class_=sim_class)  # sim_class(state).simulate()
+            return rewards
+
+        res = Parallel(n_jobs=-2)(delayed(sim)(state) for _ in range(int(np.ceil(simulations / batch_size))))
+
+        rewards = sum(res)
+    return rewards / simulations  # Returns 1, -1, or draw
 
 
-def backpropagate__(node, result, bias=0.3):
-    for i in range(node.depth):
-        node.visits += 1
-        # Update the average reward using the incremental averaging formula
-        node.total_reward += result - bias  # (result - node.total_reward) / node.visits
-        node = node.parent
-
-    node.visits += 1
-    # Update the average reward using the incremental averaging formula
-    node.total_reward += result - bias  # (result - node.total_reward) / node.visits
-    return node
-
-def backpropagate(node, result,bias=0.3):
-    while node is not None:
+def backpropagate(node, result):
+    condition = True
+    while condition:
         node.visits += 1
         node.total_reward += result  # result is +1, -1, or 0 for draw
-        node = node.parent
+        if node.parent is not None:
+            node = node.parent
+        else:
+            condition = False
     return node
 
 
-def mcts_search(root, sim_class, deepness=20, simulations=100, bias=0.3, c=np.sqrt(2)):
+def parallelised_mcts_search(root, sim_class, deepness=20, simulations=100, batch_size=100, bias=0.3, c=np.sqrt(2),
+                             parallel=True):
+    def mcts_search_para(root):
+        for _ in range(batch_size):
+            node = root
+
+            # Selection
+            while node.children and not node.untried_moves:
+                node = select_best_node(node, c)
+
+            # Expansion
+            child = expand_node(node, sim_class)
+
+            if child:
+                node = child
+
+            result = simulate(node.state, simulations, sim_class)
+
+            # Backpropagation
+            node = backpropagate(node, result)
+        return root
+
+    res = Parallel(n_jobs=-2, verbose=2)(
+        delayed(mcts_search_para)(root) for _ in range(int(np.ceil(deepness / batch_size))))
+    game = UltimateToe()
+    new_root = SearchTreeNode(game, sim_class=UltimateToe)
+    for elem in res:
+        new_root = new_root.merge_trees(elem)
+    return new_root
+
+
+def mcts_search(root, sim_class, deepness=20, simulations=100, bias=0.3, c=np.sqrt(2), parallel=True):
     for i in range(deepness):
         node = root
 
         # Selection
         while node.children and not node.untried_moves:
             node = select_best_node(node, c)
-
-        # Simulation
-        if node.state.is_terminal():
-            print(f'arrived to terrminal {node.state.winner}')
-            if node.state.winner != 0.:
-                print('eccomi')
         # Expansion
         child = expand_node(node, sim_class)
         if child:
             node = child
 
         # Simulation
-        if node.state.is_terminal():
-            print(f'arrived to terrminal {node.state.winner}')
-            if node.state.winner != 0.:
-                print('eccomi')
-
         result = simulate(node.state, simulations, sim_class)
 
         # Backpropagation
-        node = backpropagate(node, result, bias)
+        node = backpropagate(node, result)
 
     # Best Move (Highest visit count)
-    best_move = get_best_move(root)
+    best_move = root.get_best_move()
     return best_move, root
 
 
-def get_best_move(root):
-    best_move = max(root.children.keys(), key=lambda move: root.children[move].visits)
-    return best_move
-
-
-def self_play_mcts(mcts_search, game_class, num_games=10, deepness=1000, simulations=100, sim_class=SimpleTicTacToe):
-    game = game_class()
-
-    root = SearchTreeNode(game)
-
-    best_move, root = mcts_search(root, deepness=deepness, simulations=simulations, sim_class=sim_class)
-    # Loop over a fixed number of self-play games
-    for game_num in range(num_games):
-        # Initialize the game
-        game = game_class()  # This could be Tic-Tac-Toe, Chess, etc.
-        current_player = 1  # Player 1 starts
-
-        # Play the game until it reaches a terminal state
-        while not game.is_terminal():
-            if root.depth == 0:
-                best_move = game_num % 9
-            # Perform MCTS search from the current game state
-            else:
-                best_move, root = mcts_search(root, deepness=deepness, simulations=simulations, sim_class=sim_class)
-
-            # Apply the move to the game
-            game.step_forward(best_move)
-
-            game.current_player *= -1
-
-            # Update the root for the next turn
-            root = root.children[best_move]
-
-            # Switch to the next player
-            current_player *= -1
-
-        # Once the game ends, backpropagate the result up the MCTS tree
-        result = game.winner  # +1 for Player 1 win, -1 for Player 2 win, 0 for draw
-        root = backpropagate(root, result)
-
-    return root
-
-
-
-
-
-def make_a_choice(root,my_move = None,deepness=1000,simulations=100):
+def make_a_choice(root, my_move=None, deepness=1000, simulations=100):
     if my_move is None:
-        best_move, root = mcts_search(root,UltimateToe,deepness,simulations)
-        return best_move,root
+        best_move, root = mcts_search(root, UltimateToe, deepness, simulations)
+        return best_move, root
     else:
-        root = root.children[(my_move[0],my_move[1])]
+        root = root.children[(my_move[0], my_move[1])]
         root.parent = None
         best_move, root = mcts_search(root, UltimateToe, deepness, simulations)
         return best_move, root
-
-
 
 
 game = UltimateToe()
 
 root = SearchTreeNode(game, sim_class=UltimateToe)
 
-best_move,root = make_a_choice(root,my_move = None,deepness=100,simulations=1000)
+import time
+
+deepness = 1000
+batch_size = int(deepness / 7)
+simulations = 100
+
+print(f'cpu count = {cpu_count()}')
+
+start = time.time()
+# best_move,root = mcts_search(root, UltimateToe, deepness=deepness, simulations=simulations, bias=0.3, c=np.sqrt(2),parallel=True)
+roots = parallelised_mcts_search(root, UltimateToe, deepness=deepness, simulations=simulations, batch_size=batch_size,
+                                 bias=0.3, c=np.sqrt(2), parallel=True)
+end = time.time()
+
+print(f'for {deepness} simulations in parallel, time = {end - start}s')
+"""
+start = time.time()
+root =  mcts_search(root, UltimateToe, deepness=deepness, simulations=simulations, bias=0.3, c=np.sqrt(2),parallel=True)
+end = time.time()
+
+print(f'for {deepness} simulations NOT in parallel, time = {end-start}s')
+
+best_move,root = make_a_choice(root,my_move = None,deepness=10,simulations=10000)
+
+a = root.get_state_probabilities(root)
+
+best_move,root_b = make_a_choice(deepcopy(root),my_move = None,deepness=100,simulations=10000)
+
+new_root = root.merge_trees(root_b)"""

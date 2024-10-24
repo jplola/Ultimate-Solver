@@ -188,3 +188,5 @@ def print_gameplay(board: np.array((3, 3))):
         print_row(row)
         if i < 2:
             print_hline()
+
+
