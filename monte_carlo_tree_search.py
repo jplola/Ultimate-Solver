@@ -213,21 +213,21 @@ def make_a_choice(root, my_move=None, deepness=1000, simulations=100):
         return best_move, root
 
 
-game = UltimateToe()
+game = SimpleTicTacToe()
 
-root = SearchTreeNode(game, sim_class=UltimateToe)
+root = SearchTreeNode(game, sim_class=SimpleTicTacToe)
 
 import time
 
 deepness = 1000
 batch_size = int(deepness / 7)
-simulations = 100
+simulations = 1000
 
 print(f'cpu count = {cpu_count()}')
 
 start = time.time()
 # best_move,root = mcts_search(root, UltimateToe, deepness=deepness, simulations=simulations, bias=0.3, c=np.sqrt(2),parallel=True)
-roots = parallelised_mcts_search(root, UltimateToe, deepness=deepness, simulations=simulations, batch_size=batch_size,
+roots = parallelised_mcts_search(root, SimpleTicTacToe, deepness=deepness, simulations=simulations, batch_size=batch_size,
                                  bias=0.3, c=np.sqrt(2), parallel=True)
 end = time.time()
 
