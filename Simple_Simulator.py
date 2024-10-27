@@ -190,23 +190,6 @@ class SimpleTicTacToe():
             terminal = self.is_terminal()
 
 
-game = SimpleTicTacToe()
-
-nsim = 1000
-tot = 0
-for i in range(nsim):
-    game.reset()
-    game.guided_random_self_play()
-    winner = game.winner
-    if winner == -5:
-        winner = 0
-
-    tot += winner
-
-
-tot = tot/nsim
-
-print(tot)
 
 
 
