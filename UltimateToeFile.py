@@ -129,6 +129,14 @@ class UltimateToe(SimpleTicTacToe):
                     int(initial_col * 3):int(initial_col * 3 +3)] = small_board.board
         return visual_board
 
+    def give_board(self):
+        board = np.zeros((9,9))
+        for i,miniboard in enumerate(self.small_boards):
+            big_row,big_col = divmod(i,3)
+            board[int(big_row*3):int(big_row*3 + 3),int(big_col*3):int(big_col*3 +3)] = miniboard.get_board()
+        return board
+
+
 game_ = UltimateToe()
 
 game_.random_self_play()

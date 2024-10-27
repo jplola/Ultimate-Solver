@@ -233,4 +233,46 @@ def make_a_choice(root, my_move=None, deepness=1000, simulations=100,sim_class=S
         return 'Terminal',root
 
 
+class MCTSmodel:
+    def __init__(self,deepness=1000,simulations=1,batch_size=100,c = np.sqrt(2),sim_class = SimpleTicTacToe):
+        game = sim_class()
+        self.tree = SearchTreeNode(game,parent=None,sim_class=sim_class)
+        self.deepness = deepness
+        self.simulations = simulations
+        self.batch_size = batch_size
+        self.sim_class = sim_class
+        self.c = c
+
+    def next_move(self,state):
+        game = self.sim_class(state)
+        self.tree = SearchTreeNode(game,sim_class=self.sim_class)
+        self.tree = mcts_search(self.tree, self.sim_class, deepness=self.deepness, simulations=self.simulations, c=self.c)
+
+        if not state.is_terminal():
+            my_move = self.tree.get_best_move()
+            state.step_forward(my_move)
+            state.current_player *= -1
+            return True
+        else:
+            return False
+
+
+class RandomModel:
+    def next_move(self,state):
+        if not state.is_terminal():
+            index = np.random.choice(np.arange(len(state.legal_moves)))
+            my_move = state.legal_moves[index]
+            state.step_forward(my_move)
+            state.current_player *= -1
+            return True
+        else:
+            return False
+
+
+"""game = SimpleTicTacToe()
+model = MCTSmodel()
+
+model.next_move(game)"""
+
+
 

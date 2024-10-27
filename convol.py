@@ -140,34 +140,40 @@ def get_move_probabilities(model, board):
     return predictions[0]  # Remove batch dimension
 
 
-# Example usage
-if __name__ == "__main__":
-    # Create example data (replace this with your actual data)
-    states,probabilities = generate_training_data(num_games=1000,parallelise=False)
 
-    train_boards,train_probabilities = prepare_data(states, probabilities)
 
-    # Create and train the model
-    model = create_tictactoe_cnn()
 
-    # Train the model with your data
-    history = train_model(
-        model,
-        train_boards,
-        train_probabilities,
-        epochs=10,
-        batch_size=100
-    )
+class CONVOLmodel:
+    def __init__(self,num_games_training=1000):
+        # Create example data (replace this with your actual data)
+        states, probabilities = generate_training_data(num_games=num_games_training, parallelise=False)
 
-    # Test prediction on a single board
-    test_board = np.array([
-        [-1, 0, 1],
-        [0, 1, 0],
-        [0, 0, -1]
-    ])
+        train_boards, train_probabilities = prepare_data(states, probabilities)
 
-    probabilities = get_move_probabilities(model, test_board)
-    print("\nTest Board")
-    print(test_board)
-    print("\nPredicted move probabilities:")
-    print(np.round(probabilities,3))
+        # Create and train the model
+        model = create_tictactoe_cnn()
+
+        # Train the model with your data
+        history = train_model(
+            model,
+            train_boards,
+            train_probabilities,
+            epochs=20,
+            batch_size=32
+        )
+
+        self.model = model
+
+    def next_move(self,state):
+
+        probabilities = get_move_probabilities(self.model, state.board)
+        possible_prob = np.argmax(probabilities)
+        if possible_prob in state.legal_moves:
+            state.step_forward(possible_prob)
+            state.current_player *= -1
+
+
+"""game = SimpleTicTacToe()
+model = CONVOLmodel()
+
+model.next_move(game)"""

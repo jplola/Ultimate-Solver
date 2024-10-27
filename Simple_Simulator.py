@@ -189,10 +189,7 @@ class SimpleTicTacToe():
             self.current_player *= -1
             terminal = self.is_terminal()
 
-
-
-
-
-
+    def get_board(self):
+        return self.board
 
 
