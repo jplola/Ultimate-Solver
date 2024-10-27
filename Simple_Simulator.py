@@ -89,6 +89,7 @@ class SimpleTicTacToe():
             self.turns.append(self.current_player)
             self.winner = self.check_board_win(self.board)
             self.moves.append(action)
+            self.turns.append(self.current_player)
             #self.current_player *= -1
 
         return self

@@ -83,6 +83,7 @@ class UltimateToe(SimpleTicTacToe):
 
             self.winner = self.board.winner
             self.moves.append((small_board, action))
+            self.turns.append(self.current_player)
 
         return self
 

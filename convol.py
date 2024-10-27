@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from Simple_Simulator import SimpleTicTacToe
-from monte_carlo_tree_search import SearchTreeNode,make_a_choice
+from monte_carlo_tree_search import SearchTreeNode
 import tensorflow as tf
 from tensorflow.keras import layers, models
 import numpy as np
@@ -19,7 +19,7 @@ def generate_training_data(num_games=100,parallelise = False):
         game = SimpleTicTacToe()
         root = SearchTreeNode(game, sim_class=SimpleTicTacToe)
 
-        best_move, root = make_a_choice(root, my_move=None, deepness=243, simulations=1, sim_class=SimpleTicTacToe,
+        best_move, root = SearchTreeNode.make_a_choice(root, my_move=None, deepness=243, simulations=1, sim_class=SimpleTicTacToe,
                                         batch_size=100,parallelise=parallelise)
 
         state, probabilities = root.get_state_probabilities_simple(root)
@@ -33,10 +33,10 @@ def generate_training_data(num_games=100,parallelise = False):
         count = 0
         while continue_loop:
             if count % 2 == 0:
-                best_move, root = make_a_choice(root, my_move=best_move, deepness=243, simulations=1,
+                best_move, root = SearchTreeNode.make_a_choice(root, my_move=best_move, deepness=243, simulations=1,
                                                 sim_class=SimpleTicTacToe, batch_size=100, c=np.sqrt(2),parallelise=parallelise)
             else:
-                best_move, root = make_a_choice(root, my_move=best_move, deepness=243, simulations=1,
+                best_move, root = SearchTreeNode.make_a_choice(root, my_move=best_move, deepness=243, simulations=1,
                                                 sim_class=SimpleTicTacToe, batch_size=100, c=10,parallelise=parallelise)
 
             if best_move != 'Terminal':
@@ -144,7 +144,7 @@ def get_move_probabilities(model, board):
 
 
 class CONVOLmodel:
-    def __init__(self,num_games_training=1000):
+    def __init__(self,num_games_training=10):
         # Create example data (replace this with your actual data)
         states, probabilities = generate_training_data(num_games=num_games_training, parallelise=False)
 
@@ -172,8 +172,3 @@ class CONVOLmodel:
             state.step_forward(possible_prob)
             state.current_player *= -1
 
-
-"""game = SimpleTicTacToe()
-model = CONVOLmodel()
-
-model.next_move(game)"""
