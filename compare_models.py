@@ -7,15 +7,19 @@ from UltimateToeFile import UltimateToe
 albero_score = 0
 albero_improved_score = 0
 
-total_game_numbers = 1000
+total_game_numbers = 100
 
-albero_model = RandomModel()
-albero_model_improved = MCTSmodel(deepness=81,simulations=1,sim_class=UltimateToe)#CONVOLmodel(num_games_training=10000)
+albero_model = MCTSmodel(deepness=10,simulations=9,sim_class=UltimateToe,c=0.5)
+albero_model_improved = MCTSmodel(deepness=10,simulations=9,sim_class=UltimateToe)
 
 for i in range(total_game_numbers):
     game = UltimateToe()
-    game.current_player *= np.random.choice([-1,1])
+    if i%2==0:
+        game.current_player = 1
+    else:
+        game.current_player = -1
 
+    first_to_go = game.current_player
     while not game.is_terminal():
         if game.current_player == -1:
             albero_model.next_move(game)
@@ -29,7 +33,7 @@ for i in range(total_game_numbers):
     elif  game.winner == 1:
         albero_improved_score +=1
 
-    print(f'game numba = {i}: Random Model = {albero_score}, albero_model_improved = {albero_improved_score}')
+    print(f'game numba = {i}: Random Model = {albero_score}, albero_model_improved = {albero_improved_score}, fist = {first_to_go}')
 
 
 

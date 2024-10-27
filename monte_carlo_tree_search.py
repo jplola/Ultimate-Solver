@@ -242,7 +242,7 @@ class MCTSmodel:
         self.batch_size = batch_size
         self.sim_class = sim_class
         self.c = c
-
+        self.selection_function = None
     def next_move(self,state):
         game = self.sim_class(state)
         self.tree = SearchTreeNode(game,sim_class=self.sim_class)
