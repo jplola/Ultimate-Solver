@@ -70,7 +70,12 @@ class SearchTreeNode:
     def get_state_probabilities(root):
         probabilities = np.zeros((9, 9))
 
-        total_visits = root.visits
+        total_visits = 0
+
+        for move in root.children.keys():
+            total_visits += root.children[move].visits
+
+
         for move in root.children.keys():
             big_row, big_col = divmod(move[0], 3)
             small_row, small_col = divmod(move[1], 3)
@@ -286,6 +291,46 @@ class MCTSmodel:
         while self.tree.parent is not None:
             self.tree = self.tree.parent
 
+    def get_probabilities_for_visited_nodes(self, min_visits=0,node=None, probabilities_dict=None):
+        """
+        Recursively traverse the tree and collect state probabilities
+        for nodes with a minimum number of visits.
+
+        Args:
+            node (SearchTreeNode): The current node being visited.
+            probabilities_dict (dict): Dictionary to store the probability matrices.
+
+        Returns:
+            dict: A dictionary where keys are states and values are probability matrices.
+        """
+        if probabilities_dict is None:
+            probabilities_dict = {}
+
+        if node is None:
+            node = self.tree
+
+        # Check if node meets the visit criteria
+        if node.visits >= min_visits:
+            # Calculate probabilities for the current node
+            if len(node.state.moves) > 0:
+                probabilities_dict[node.state] = (node.state.moves[-1],SearchTreeNode.get_state_probabilities(node))
+
+        # Traverse the children recursively
+        for child_node in node.children.values():
+            self.get_probabilities_for_visited_nodes(min_visits,child_node, probabilities_dict)
+
+        return probabilities_dict
+
+    def get_probabilities_for_visited_nodes_list(self,min_visits=0):
+        probabilities_dict = self.get_probabilities_for_visited_nodes(min_visits)
+        list_ = []
+        for node in probabilities_dict.keys():
+            last_move_probabilities = probabilities_dict[node]
+            list_.append((node.visualise_board(),last_move_probabilities[0],last_move_probabilities[1]))
+        return list_
+
+
+
 class RandomModel:
     def next_move(self, state):
         if not state.is_terminal():
@@ -296,6 +341,8 @@ class RandomModel:
             return my_move
         else:
             return False
+
+
 
 
 

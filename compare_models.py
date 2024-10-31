@@ -1,20 +1,18 @@
-from monte_carlo_tree_search import MCTSmodel,RandomModel
-from convol import CONVOLmodel
-from Simple_Simulator import SimpleTicTacToe
-import numpy as np
+from monte_carlo_tree_search import MCTSmodel, RandomModel
 from UltimateToeFile import UltimateToe
+from Augmentations import rotate_ninety_counter_data, final_form_data
 
 albero_score = 0
 albero_improved_score = 0
 sim_class = UltimateToe
-total_game_numbers = 100
+total_game_numbers = 20
 
-albero_model = RandomModel()
-albero_model_improved = MCTSmodel(deepness=81,simulations=10,sim_class=sim_class)
+albero_model = MCTSmodel(deepness=20, simulations=10, sim_class=sim_class)
+albero_model_improved = MCTSmodel(deepness=10, simulations=10, sim_class=sim_class)
 
 for i in range(total_game_numbers):
     game = sim_class()
-    if i%2==0:
+    if i % 2 == 0:
         game.current_player = 1
     else:
         game.current_player = -1
@@ -24,23 +22,40 @@ for i in range(total_game_numbers):
         cur = game.current_player
         if game.current_player == -1:
             move = albero_model.next_move(game)
-            albero_model_improved.make_opponent_move(move,game)
+            albero_model_improved.make_opponent_move(move, game)
         else:
-            move = albero_model_improved.next_move(game,in_place=True)
-            #albero_model.make_opponent_move(move,game)
+            move = albero_model_improved.next_move(game, in_place=True)
+            # albero_model.make_opponent_move(move,game)
 
         a = game.visualise_board()
 
-
-    #albero_model.return_to_root()
+    # albero_model.return_to_root()
     albero_model_improved.return_to_root()
 
     if game.winner == -1:
-        albero_score +=1
-    elif  game.winner == 1:
-        albero_improved_score +=1
+        albero_score += 1
+    elif game.winner == 1:
+        albero_improved_score += 1
 
-    print(f'game numba = {i}: Random Model = {albero_score}, albero_model_improved = {albero_improved_score}, fist = {first_to_go}')
+    print(
+        f'game numba = {i}: Random Model = {albero_score}, '
+        f'albero_model_improved = {albero_improved_score}, fist = {first_to_go}')
 
+albero_model_improved.tree.merge_trees(albero_model.tree)
 
+data = albero_model_improved.get_probabilities_for_visited_nodes_list(min_visits=50)
 
+augmented_data = []
+
+for elem in data:
+    ninety = rotate_ninety_counter_data(elem)
+    augmented_data.append(final_form_data(ninety))
+
+    oneeighty = rotate_ninety_counter_data(ninety)
+    augmented_data.append(final_form_data(oneeighty))
+
+    twoseventy = rotate_ninety_counter_data(oneeighty)
+    augmented_data.append(final_form_data(twoseventy))
+
+    threesixty = rotate_ninety_counter_data(twoseventy)
+    augmented_data.append(final_form_data(threesixty))
