@@ -25,7 +25,7 @@ for i in range(total_game_numbers):
             albero_model_improved.make_opponent_move(move, game)
         else:
             move = albero_model_improved.next_move(game, in_place=True)
-            # albero_model.make_opponent_move(move,game)
+            albero_model.make_opponent_move(move,game)
 
         a = game.visualise_board()
 

@@ -5,7 +5,7 @@ from Simple_Simulator import SimpleTicTacToe
 
 
 def ucb1(node, c=np.sqrt(2)):  # c is the exploration constant (sqrt(2) is common)
-    if node.visits == 0:
+    if node.visits == 1:
         return float('inf')  # Always explore unvisited nodes
     exploitation = node.total_reward / node.visits
     exploration = c * np.sqrt(np.log(node.parent.visits) / node.visits)
@@ -71,6 +71,7 @@ class SearchTreeNode:
         probabilities = np.zeros((9, 9))
 
         total_visits = 0
+
 
         for move in root.children.keys():
             total_visits += root.children[move].visits
@@ -237,7 +238,7 @@ class SearchTreeNode:
             root = SearchTreeNode.mcts_search(root, sim_class, deepness=deepness, simulations=simulations, c=np.sqrt(2),
                                               selection_func=selection_func)
 
-        if root.children:
+        if len(root.children.keys())>0:
             best_move = root.get_best_move()
             return best_move, root
         else:
@@ -269,11 +270,12 @@ class MCTSmodel:
                                                simulations=self.simulations,
                                                c=self.c, selection_func=self.selection_function)
         if not state.is_terminal():
-            my_move = self.tree.get_best_move()
-            state.step_forward(my_move)
-            self.tree = self.tree.children[my_move]
-            state.current_player *= -1
-            return my_move
+            if len(self.tree.children)>0:
+                my_move = self.tree.get_best_move()
+                state.step_forward(my_move)
+                self.tree = self.tree.children[my_move]
+                state.current_player *= -1
+                return my_move
         else:
             return False
 
@@ -313,7 +315,12 @@ class MCTSmodel:
         if node.visits >= min_visits:
             # Calculate probabilities for the current node
             if len(node.state.moves) > 0:
-                probabilities_dict[node.state] = (node.state.moves[-1],SearchTreeNode.get_state_probabilities(node))
+                prob = SearchTreeNode.get_state_probabilities(node)
+                if type(prob) == np.array:
+                    probabilities_dict[node.state] = (node.state.moves[-1],prob)
+                else:
+                    probabilities_dict[node.state] = (node.state.moves[-1], np.zeros((9,9)))
+
 
         # Traverse the children recursively
         for child_node in node.children.values():

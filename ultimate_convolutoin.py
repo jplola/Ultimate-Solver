@@ -279,6 +279,9 @@ def train_model_with_checkpoints(model, game_data, num_epochs=10, batch_size=32,
         model: Trained model
         best_loss: Best loss achieved during training
     """
+    if game_data == []:
+        print('Gamedata Not Available')
+        return -1
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
@@ -360,26 +363,31 @@ class CNNpolicyModel:
         self.num_games = num_games
         self.min_visits = min_visits
         self.epochs = epochs
+        self.len_training_data = 0
 
     def load_model(self):
         model=UltimateTTTCNN()
         loaded_model, _, _, _ = load_model_checkpoint('checkpoints/best_model', model)
         self.model = loaded_model
-    def resume_training(self,checkpoint = None,num_games=10,first_deepness=10,second_deepness=10,min_visits = 50):
+    def resume_training(self):
+
+        self.load_model()
         # Train model with checkpointing
-        game_data = make_MCTS_combat(games_played=num_games,
-                                     first_deepness=first_deepness,
-                                     second_deepness=second_deepness,
-                                     min_visits=min_visits)
+        game_data = make_MCTS_combat(games_played=self.num_games,
+                                     first_deepness=self.first_deepness,
+                                     second_deepness=self.second_deepness,
+                                     min_visits=self.min_visits)
         trained_model, best_loss = train_model_with_checkpoints(
             self.model,
             game_data,
             num_epochs=20,
             checkpoint_frequency=5  # Save every 5 epochs
         )
+        self.len_training_data += len(game_data)
         self.model = trained_model
     def reset_and_start_training(self):
         model = UltimateTTTCNN()
+
         game_data = make_MCTS_combat(games_played=self.num_games,
                                      first_deepness=self.first_deepness,
                                      second_deepness=self.second_deepness,
@@ -392,6 +400,7 @@ class CNNpolicyModel:
             num_epochs=self.epochs,
             checkpoint_frequency=5  # Save every 5 epochs
         )
+        self.len_training_data = len(game_data)
         self.model = trained_model
 
     @staticmethod
@@ -458,8 +467,11 @@ random_score = 0
 sim_class = UltimateToe
 total_game_numbers = 1000
 
-CNN = CNNpolicyModel()
-CNN.reset_and_start_training()
+CNN = CNNpolicyModel(first_deepness=30,second_deepnees=200,num_games=10,min_visits=0)
+#CNN.reset_and_start_training()
+#
+
+CNN.resume_training()
 
 random_model = RandomModel()
 
