@@ -38,8 +38,69 @@ class UltimateTTTDataset(Dataset):
         input_tensor = torch.cat([board_tensor, last_move_tensor], dim=0)
 
         return input_tensor, torch.FloatTensor(next_move_probs)
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1, use_bn=True):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=padding)
+        self.bn1 = nn.BatchNorm2d(out_channels) if use_bn else nn.Identity()
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, padding=padding)
+        self.bn2 = nn.BatchNorm2d(out_channels) if use_bn else nn.Identity()
+        self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1) if in_channels != out_channels else nn.Identity()
 
+    def forward(self, x):
+        shortcut = self.shortcut(x)
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.bn2(self.conv2(x))
+        x += shortcut
+        return F.relu(x)
+
+class UltimateTTTCNN(nn.Module):
+    def __init__(self):
+        super(UltimateTTTCNN, self).__init__()
+
+        # Convolutional layers with ResNet-style residual blocks
+        self.res_block1 = ResidualBlock(2, 32)
+        self.res_block2 = ResidualBlock(32, 64)
+        self.res_block3 = ResidualBlock(64, 128)
+        self.res_block4 = ResidualBlock(128, 64)
+        self.conv5 = nn.Conv2d(64, 1, kernel_size=1)
+
+        # Fully connected layers
+        self.fc1 = nn.Linear(9 * 9, 128)
+        self.fc_extra = nn.Linear(128, 64)  # New fully connected layer
+        self.fc2 = nn.Linear(64, 81)  # Output layer for 9x9 board
+
+        # Dropout layer
+        self.dropout = nn.Dropout(0.5)  # Dropout with probability 0.5
+
+    def forward(self, x):
+        # Pass through residual blocks
+        x = self.res_block1(x)
+        x = self.res_block2(x)
+        x = self.res_block3(x)
+        x = self.res_block4(x)
+        x = self.conv5(x)
+
+        # Flatten
+        x = x.view(x.size(0), -1)
+
+        # Fully connected layers with Dropout
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)  # Apply dropout
+        x = F.relu(self.fc_extra(x))  # New fully connected layer
+        x = self.fc2(x)
+
+        # Reshape and apply softmax
+        x = x.view(-1, 9, 9)
+        x = F.softmax(x.view(-1, 81), dim=1).view(-1, 9, 9)
+
+        return x
+
+"""
 class UltimateTTTCNN(nn.Module):
     def __init__(self):
         super(UltimateTTTCNN, self).__init__()
@@ -80,8 +141,9 @@ class UltimateTTTCNN(nn.Module):
 
         return x
 
+"""
 
-def train_model(model, game_data, num_epochs=10, batch_size=32, learning_rate=0.001):
+def train_model(model, game_data, num_epochs=10, batch_size=32, learning_rate=0.01):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
@@ -116,7 +178,6 @@ def train_model(model, game_data, num_epochs=10, batch_size=32, learning_rate=0.
         print(f'Epoch {epoch + 1}/{num_epochs}, Average Loss: {avg_loss:.4f}')
 
     return model
-
 
 def get_move_probabilities(model, current_board, last_move, device=None):
     """
@@ -260,7 +321,7 @@ def load_model_checkpoint(filename, model=None, optimizer=None):
 
 
 def train_model_with_checkpoints(model, game_data, num_epochs=10, batch_size=32,
-                               learning_rate=0.001, checkpoint_dir='checkpoints',
+                               learning_rate=0.01, checkpoint_dir='checkpoints',
                                checkpoint_frequency=1, resume_from=None):
     """
     Train model with periodic checkpointing and option to resume training.
@@ -369,7 +430,7 @@ class CNNpolicyModel:
         model=UltimateTTTCNN()
         loaded_model, _, _, _ = load_model_checkpoint('checkpoints/best_model', model)
         self.model = loaded_model
-    def resume_training(self):
+    def resume_training(self,learning_rate=0.01):
 
         self.load_model()
         # Train model with checkpointing
@@ -381,11 +442,13 @@ class CNNpolicyModel:
             self.model,
             game_data,
             num_epochs=20,
-            checkpoint_frequency=5  # Save every 5 epochs
+            checkpoint_frequency=5,  # Save every 5 epochs
+            learning_rate=learning_rate
         )
         self.len_training_data += len(game_data)
         self.model = trained_model
-    def reset_and_start_training(self):
+    def reset_and_start_training(self,learning_rate=0.01):
+        print("starting creating dataset...")
         model = UltimateTTTCNN()
 
         game_data = make_MCTS_combat(games_played=self.num_games,
@@ -394,11 +457,13 @@ class CNNpolicyModel:
                                      second_sim=self.second_simulation,
                                      first_sim=self.first_simulations,
                                      min_visits=self.min_visits)
+        print("starting training...")
         trained_model, best_loss = train_model_with_checkpoints(
             model,
             game_data,
             num_epochs=self.epochs,
-            checkpoint_frequency=5  # Save every 5 epochs
+            checkpoint_frequency=5,  # Save every 5 epochs
+            learning_rate=learning_rate
         )
         self.len_training_data = len(game_data)
         self.model = trained_model
@@ -433,17 +498,20 @@ class CNNpolicyModel:
             #best_move = np.unravel_index(np.argmax(probabilities), probabilities.shape)
             #print(f"Most likely move: row={best_move[0]}, col={best_move[1]}")
 
+            last = state.moves[-1]
             # Get top 3 moves
             flat_probs = probabilities.flatten()
             top_moves = np.argsort(flat_probs)[::-1]
             legal_chosen = []
-            for move in top_moves:
+            for i,move in enumerate(top_moves):
                 move_tuple = self.from_one_to81_to_tuple(move)
                 if move_tuple in state.legal_moves:
                     legal_chosen.append(move_tuple)
                     state.step_forward(move_tuple)
                     state.current_player *= -1
                     return move_tuple
+                if i > 20:
+                    break
 
             index = np.random.choice(np.arange(len(state.legal_moves)))
             my_move = state.legal_moves[index]
@@ -465,15 +533,15 @@ from UltimateToeFile import UltimateToe
 CNN_score = 0
 random_score = 0
 sim_class = UltimateToe
-total_game_numbers = 1000
+total_game_numbers = 100
 
-CNN = CNNpolicyModel(first_deepness=30,second_deepnees=200,num_games=10,min_visits=0)
-#CNN.reset_and_start_training()
-#
+CNN = CNNpolicyModel(first_deepness=20,second_deepnees=20,num_games=1,min_visits=0)
+CNN.reset_and_start_training(learning_rate=0.5)
+#CNN.resume_training(learning_rate=0.001)
+#CNN.load_model()
 
-CNN.resume_training()
 
-random_model = RandomModel()
+random_model = MCTSmodel(deepness=10,sim_class=UltimateToe)
 
 for i in range(total_game_numbers):
     game = sim_class()

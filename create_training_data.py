@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import numpy as np
 
 from monte_carlo_tree_search import MCTSmodel,RandomModel
@@ -12,7 +14,7 @@ def make_MCTS_combat(games_played=10, first_deepness=20, second_deepness=10,
     total_game_numbers = games_played
 
 
-    albero_model = RandomModel()#MCTSmodel(deepness=first_deepness, simulations=first_sim, sim_class=sim_class)
+    albero_model = MCTSmodel(deepness=first_deepness, simulations=first_sim, sim_class=sim_class)
     albero_model_improved = MCTSmodel(deepness=second_deepness, simulations=second_sim, sim_class=sim_class)
     data = []
     for i in range(total_game_numbers):
@@ -25,8 +27,13 @@ def make_MCTS_combat(games_played=10, first_deepness=20, second_deepness=10,
         first_to_go = game.current_player
         while not game.is_terminal():
             if game.current_player == -1:
-                move = albero_model.next_move(game)
+                if len(game.moves)>0:
+                    last_move = game.moves[-1]
+                move = albero_model.next_move(game,in_place=False)
                 albero_model_improved.make_opponent_move(move, game)
+                prob = albero_model.tree.get_state_probabilities(albero_model.tree)
+                if len(game.moves) > 1:
+                    data.append((game.visualise_board(),last_move,prob))
             else:
                 if len(game.moves)>0:
                     last_move = game.moves[-1]
@@ -36,10 +43,10 @@ def make_MCTS_combat(games_played=10, first_deepness=20, second_deepness=10,
                 if len(game.moves) > 1:
                     data.append((game.visualise_board(),last_move,prob))
 
-                #albero_model.make_opponent_move(move, game)
+                albero_model.make_opponent_move(move, game)
 
 
-        #albero_model.return_to_root()
+
 
         #other = albero_model.get_probabilities_for_visited_nodes_list(min_visits=min_visits)
 
@@ -63,17 +70,18 @@ def make_MCTS_combat(games_played=10, first_deepness=20, second_deepness=10,
 
     for elem in data:
         if np.count_nonzero(elem[2]) > 0:
-            augmented_data.append(final_form_data(elem))
-            """ninety = rotate_ninety_counter_data(elem)
-            augmented_data.append(final_form_data(ninety))
+            #augmented_data.append(final_form_data(elem))
+
+            ninety = rotate_ninety_counter_data(elem)
+            augmented_data.append(final_form_data(deepcopy(ninety)))
 
             oneeighty = rotate_ninety_counter_data(ninety)
-            augmented_data.append(final_form_data(oneeighty))
+            augmented_data.append(final_form_data(deepcopy(oneeighty)))
 
             twoseventy = rotate_ninety_counter_data(oneeighty)
-            augmented_data.append(final_form_data(twoseventy))
+            augmented_data.append(final_form_data(deepcopy(twoseventy)))
 
             threesixty = rotate_ninety_counter_data(twoseventy)
-            augmented_data.append(final_form_data(threesixty))"""
+            augmented_data.append(final_form_data(deepcopy(threesixty)))
 
     return augmented_data
