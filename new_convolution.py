@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+"""
 class UltimateTicTacToeNet(nn.Module):
     def __init__(self):
         super(UltimateTicTacToeNet, self).__init__()
@@ -56,9 +56,76 @@ class UltimateTicTacToeNet(nn.Module):
 
         return x
 
+"""
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
+class UltimateTicTacToeNet(nn.Module):
+    def __init__(self):
+        super(UltimateTicTacToeNet, self).__init__()
 
+        # Convolutional branch 1: 3x3 kernel, stride of 3, followed by batch normalization
+        self.conv1 = nn.Conv2d(in_channels=2, out_channels=32, kernel_size=3, stride=3)
+        self.bn1 = nn.BatchNorm2d(32)
+
+        # Convolutional branch 2: 2x2 kernel, stride of 1, followed by batch normalization
+        self.conv2 = nn.Conv2d(in_channels=2, out_channels=32, kernel_size=2, stride=1)
+        self.bn2 = nn.BatchNorm2d(32)
+
+        # Fully connected layers for both branches combined
+        self.fc1 = nn.Linear(32 * 3 * 3 + 32 * 8 * 8 + 10, 128)  # Include the embedding dimension here
+        self.bn_fc1 = nn.BatchNorm1d(128)
+
+        self.fc2 = nn.Linear(128, 81)  # Output 81 values (9x9 board)
+
+        # Embedding layer for last move (to handle the integer input)
+        self.move_embedding = nn.Embedding(81, 10)  # Embedding dimension of 10 for last move
+
+    def forward(self, board, last_move):
+        # Convolutional branch 1 with batch normalization and ReLU activation
+        x1 = F.relu(self.bn1(self.conv1(board)))  # Output shape: (batch_size, 32, 3, 3)
+        x1 = x1.view(x1.size(0), -1)  # Flatten to (batch_size, 32*3*3)
+
+        # Convolutional branch 2 with batch normalization and ReLU activation
+        x2 = F.relu(self.bn2(self.conv2(board)))  # Output shape: (batch_size, 32, 8, 8)
+        x2 = x2.view(x2.size(0), -1)  # Flatten to (batch_size, 32*8*8)
+
+        # Get embedding for last move
+        move_emb = self.move_embedding(last_move)  # Shape: (batch_size, 10)
+
+        # Concatenate both branches with move embedding
+        x = torch.cat((x1, x2, move_emb), dim=1)
+
+        # First fully connected layer with batch normalization and ReLU activation
+        x = F.relu(self.bn_fc1(self.fc1(x)))
+
+        # Second fully connected layer to output 81 values
+        x = self.fc2(x)  # Shape: (batch_size, 81)
+
+
+        """
+        # Apply softmax across the entire 81-element output vector
+        x = F.softmax(x, dim=1)  # Softmax across all cells to ensure total probability = 1
+        x = x.view(-1, 9, 9)  # Reshape to 9x9 grid for the board
+        """
+        # Reshape to a 9x9 grid and apply softmax within each 3x3 sub-board
+        x = x.view(-1, 9, 9)  # Reshape to (batch_size, 9, 9)
+        # Apply softmax within each 3x3 sub-board
+        for i in range(3):
+            for j in range(3):
+                # Extract 3x3 sub-board
+                sub_board = x[:, i * 3:(i + 1) * 3, j * 3:(j + 1) * 3]
+
+                # Apply softmax to each 3x3 sub-board individually
+                normalized_sub_board = F.softmax(sub_board.reshape(sub_board.size(0), -1), dim=1).reshape(-1, 3, 3)
+
+                # Assign the normalized probabilities back to the original tensor
+                x[:, i * 3:(i + 1) * 3, j * 3:(j + 1) * 3] = normalized_sub_board
+
+
+        return x
 
 
 class UltimateTicTacToeDataset(Dataset):
@@ -264,14 +331,14 @@ random_score = 0
 sim_class = UltimateToe
 total_game_numbers = 100
 
-CNN = CnnUltimateToe(path='/Users/pietropezzoli/Desktop/tesi/pythonProject/Ultimate-Solver/checkpoints/ultimate_tictactoe_model.pth')
+CNN = CnnUltimateToe()#MCTSmodel(deepness=10,sim_class=UltimateToe)
 CNN.generate_training_data(total_games=total_game_numbers)
-CNN.resume_training(batch_size=32,num_epochs=25,learning_rate=0.001)
+CNN.resume_training(batch_size=64,num_epochs=25,learning_rate=0.01)
 
 
-random_model = RandomModel()#MCTSmodel(deepness=10,sim_class=UltimateToe)
+random_model = RandomModel()
 
-for i in range(total_game_numbers):
+for i in range(1000):
     game = sim_class()
     first_to_go = game.current_player
     while not game.is_terminal():
