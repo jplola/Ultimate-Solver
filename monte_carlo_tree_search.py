@@ -7,11 +7,21 @@ from Simple_Simulator import SimpleTicTacToe
 def ucb1(node, c=np.sqrt(2)):  # c is the exploration constant (sqrt(2) is common)
     if node.visits == 1:
         return float('inf')  # Always explore unvisited nodes
-    exploitation = node.total_reward / node.visits
+    exploitation = abs(node.total_reward) / node.visits
     exploration = c * np.sqrt(np.log(node.parent.visits) / node.visits)
     return exploitation + exploration
 
+def ucb1_with_eval(node,current_player, c=np.sqrt(2)):  # c is the exploration constant (sqrt(2) is common)
+    if node.visits == 1:
+        return float('inf')  # Always explore unvisited nodes
+    exploitation = node.total_reward / node.visits
+    exploration = c * np.sqrt(np.log(node.parent.visits) / node.visits)
 
+    res = exploitation + exploration
+    if current_player != node.state.current_player:
+        if has_winning_opportunity(node.state.small_boards[node.state.moves[-1][1]].board, -current_player):
+            res *= 0.5
+    return res
 class SearchTreeNode:
     def __init__(self, state, parent=None, sim_class=SimpleTicTacToe, selection_func=None):
         self.state = sim_class(state)
@@ -26,9 +36,7 @@ class SearchTreeNode:
         self.untried_moves = [move for move in state.get_legal_moves()]
         self.is_terminal = state.is_terminal()
         self.class_type = sim_class
-        if state.turns:
-            self.current_player = state.turns[-1]
-        # self.current_player = 1
+        self.current_player = state.current_player  #MAYBE FIX
         self.selection_func = selection_func
 
     # Merging two trees (self and other) into a new tree
@@ -103,11 +111,19 @@ class SearchTreeNode:
         return best_move
 
     @staticmethod
-    def select_best_node_ucb(node, c=np.sqrt(2)):
-        if node.state.current_player == 1:
+    def select_best_node_ucb(node,current_player , c=np.sqrt(2)):
+        if  node.state.current_player == 1:
             return max(node.children.values(), key=lambda n: ucb1(n, c))
         else:
             return min(node.children.values(), key=lambda n: ucb1(n, -c))
+
+
+    @staticmethod
+    def select_best_node_ucb_with_eval(node,current_player ,c=np.sqrt(2)):
+        if node.current_player == 1:
+            return max(node.children.values(), key=lambda n: ucb1_with_eval(n,current_player, c))
+        else:
+            return min(node.children.values(), key=lambda n: ucb1_with_eval(n,current_player ,-c))
 
     @staticmethod
     def expand_node(node, sim_class):
@@ -174,7 +190,7 @@ class SearchTreeNode:
                 # Selection
                 while node.children and not node.untried_moves:
                     if selection_func is None:
-                        node = SearchTreeNode.select_best_node_ucb(node, c)
+                        node = SearchTreeNode.select_best_node_ucb(node, root.state.current_player,c)
                     else:
                         node = selection_func(node)
 
@@ -206,9 +222,42 @@ class SearchTreeNode:
             # Selection
             while node.children and not node.untried_moves:
                 if selection_func is None:
-                    node = SearchTreeNode.select_best_node_ucb(node, c)
+                    node = SearchTreeNode.select_best_node_ucb(node,root.state.current_player, c)
                 else:
                     node = selection_func(node)
+            # Expansion
+            child = SearchTreeNode.expand_node(node, sim_class)
+            if child:
+                node = child
+
+            # Simulation
+            result = SearchTreeNode.simulate(node.state, simulations, sim_class)
+
+            # Backpropagation
+            node = SearchTreeNode.backpropagate(node, result)
+        return root
+
+    @staticmethod
+    def mcts_search_with_eval(root, sim_class, deepness=20, simulations=100, c=np.sqrt(2), selection_func=None):
+        from Eval import has_winning_opportunity
+        for i in range(deepness):
+            node = root
+
+            # Selection with evaluation of winning opportunity
+            while node.children and not node.untried_moves:
+                if selection_func is None:
+                    if len(node.state.moves) > 0:
+                        if has_winning_opportunity(node.state.small_boards[node.state.moves[-1][1]].board, -root.state.current_player):
+
+                            node = SearchTreeNode.select_best_node_ucb_with_eval(node,root.state.current_player, c)
+                        else:
+                            node = SearchTreeNode.select_best_node_ucb(node, c)
+                    else:
+                        # Standard UCB selection
+                        node = SearchTreeNode.select_best_node_ucb(node, c)
+                else:
+                    node = selection_func(node)
+
             # Expansion
             child = SearchTreeNode.expand_node(node, sim_class)
             if child:
@@ -246,8 +295,8 @@ class SearchTreeNode:
 
 
 class MCTSmodel:
-    def __init__(self, deepness=1000, simulations=1, batch_size=100, c=np.sqrt(2),
-                 sim_class=SimpleTicTacToe, selection_func=None):
+    def __init__(self, deepness=20, simulations=1, batch_size=100, c=np.sqrt(2),
+                 sim_class=SimpleTicTacToe, selection_func=None,eval=False):
         game = sim_class()
         self.tree = SearchTreeNode(game, parent=None, sim_class=sim_class)
         self.tree.mcts_search(root=self.tree,sim_class=sim_class,deepness=deepness,simulations=simulations,selection_func=selection_func)
@@ -257,8 +306,9 @@ class MCTSmodel:
         self.sim_class = sim_class
         self.c = c
         self.selection_function = selection_func
+        self.eval = eval
 
-    def next_move(self, state,in_place=False):
+    """def next_move(self, state,in_place=False):
 
 
         #
@@ -266,9 +316,16 @@ class MCTSmodel:
             game = self.sim_class(state)
             self.tree = SearchTreeNode(game, sim_class=self.sim_class)
 
-        self.tree = SearchTreeNode.mcts_search(self.tree, self.sim_class, deepness=self.deepness,
+        if self.eval:
+            self.tree = SearchTreeNode.mcts_search_with_eval(self.tree, self.sim_class, deepness=self.deepness,
                                                simulations=self.simulations,
                                                c=self.c, selection_func=self.selection_function)
+        else:
+            self.tree = SearchTreeNode.mcts_search(self.tree, self.sim_class, deepness=self.deepness,
+                                                             simulations=self.simulations,
+                                                             c=self.c, selection_func=self.selection_function)
+
+
         if not state.is_terminal():
             if len(self.tree.children)>0:
                 my_move = self.tree.get_best_move()
@@ -277,7 +334,30 @@ class MCTSmodel:
                 state.current_player *= -1
                 return my_move
         else:
-            return False
+            return False"""
+
+    def next_move(self, state, in_place=False):
+        if not in_place:
+            game = self.sim_class(state)
+            if self.tree.state != game:  # only reset if a new game state is detected
+                self.tree = SearchTreeNode(game, sim_class=self.sim_class)
+
+        # Continue with MCTS search without toggling `state.current_player`
+        if self.eval:
+            self.tree = SearchTreeNode.mcts_search_with_eval(self.tree, self.sim_class, deepness=self.deepness,
+                                                             simulations=self.simulations,
+                                                             c=self.c, selection_func=self.selection_function)
+        else:
+            self.tree = SearchTreeNode.mcts_search(self.tree, self.sim_class, deepness=self.deepness,
+                                                   simulations=self.simulations,
+                                                   c=self.c, selection_func=self.selection_function)
+
+        if not state.is_terminal() and len(self.tree.children) > 0:
+            my_move = self.tree.get_best_move()
+            state.step_forward(my_move)
+            self.tree = self.tree.children[my_move]
+            return my_move
+        return False
 
     def make_opponent_move(self,move,game):
         if move in self.tree.children.keys():
@@ -344,12 +424,45 @@ class RandomModel:
             index = np.random.choice(np.arange(len(state.legal_moves)))
             my_move = state.legal_moves[index]
             state.step_forward(my_move)
-            state.current_player *= -1
             return my_move
         else:
             return False
 
 
+"""
+from UltimateToeFile import UltimateToe
+
+UpgradedModel = MCTSmodel(sim_class=SimpleTicTacToe,eval=False,deepness=50,simulations=10)
+
+OldModel = RandomModel()
+upgraded_model_player = 1
+
+OldModel_score = 0
+UpgradedModel_score = 0
+for i in range(1000):
+    game = SimpleTicTacToe()
+
+    if i % 2 == 0:
+        game.current_player *= -1
+
+    while not game.is_terminal():
+        if int(game.current_player) == upgraded_model_player:
+            move = UpgradedModel.next_move(game)
+        else:
+            move = OldModel.next_move(game)
+            # Ensure UpgradedModel is updated with the opponent's move
+            #UpgradedModel.make_opponent_move(move, game)
+        a = game.board
+        # Ensure game.current_player is toggled in the main loop, not inside `next_move`
+        game.current_player *= -1
+
+    # Evaluate results
+    if game.winner == -upgraded_model_player:
+        OldModel_score += 1
+    elif game.winner == upgraded_model_player:
+        UpgradedModel_score += 1
+
+    print(f'game numba = {i}: UpgradedModel = {UpgradedModel_score}, OldModel = {OldModel_score}')
 
 
-
+"""

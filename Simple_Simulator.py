@@ -86,7 +86,6 @@ class SimpleTicTacToe():
             row,col = divmod(action,3)
             self.board[row,col] = self.current_player
             self.legal_moves.remove(action)
-            self.turns.append(self.current_player)
             self.winner = self.check_board_win(self.board)
             self.moves.append(action)
             self.turns.append(self.current_player)

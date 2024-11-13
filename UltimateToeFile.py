@@ -46,12 +46,11 @@ class UltimateToe(SimpleTicTacToe):
         winner = self.board.check_board_win(self.board.board)
         self.winner = winner
         if self.winner != 0:
-            self.legal_moves = []
             return True
         else:
             return False
 
-    def step_forward(self,move):
+    def step_forward(self,move : tuple):
 
         small_board, action = move[0],move[1]
         if self.winner == 0 and (small_board, action) in self.legal_moves:

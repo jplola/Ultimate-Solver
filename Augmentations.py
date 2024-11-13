@@ -51,3 +51,10 @@ def final_form_data(state: tuple) -> tuple:
     last = state[1]
     last = from_tuple_to_one_to81(last)
     return state[0], last, state[2]
+
+def rotate_ninety_simple_toe_data(data: tuple):
+    board,prob,player,reward = data[0],data[1],data[2],data[3]
+
+    return rotate_ninety_counter_data(board), \
+        rotate_ninety_counter_data(prob), player, reward
+
