@@ -271,7 +271,7 @@ def add_symmetries_to_memory(state_tensor, pi_flat, value, memory):
         memory.append((flipped_state.clone(), flat_fp.copy(), value))
 
 
-def play_self_game(sim_class, model, simulations=100, temp=1.0, max_memory_size=10000):
+def play_self_game(sim_class, model, simulations=100, temp=1.0, max_memory_size=10000,simulate=False):
     """
     Plays a complete self-play game and returns the game trajectory.
     """
@@ -284,7 +284,7 @@ def play_self_game(sim_class, model, simulations=100, temp=1.0, max_memory_size=
 
         root = AlphaZero(game, sim_class=sim_class)
 
-        root = alpha_mcts_search(root, model, depth=simulations, c_puct=temp,train=True)
+        root = alpha_mcts_search(root, model, depth=simulations, c_puct=temp,train=simulate)
         move = root.get_best_move()
 
         if move is None:
@@ -454,7 +454,7 @@ def train_network(model, memory, optimizer, epochs=1, batch_size=512, l2_const=1
 
 
 def train_alpha_zero(sim_class, iterations=10, games_per_iter=1, model=None, depth=100,
-                     temperature=1.0, max_memory_size=10000, learning_rate=1e-4,epochs=20,batch_size=128):
+                     temperature=1.0, max_memory_size=10000, learning_rate=1e-4,epochs=20,batch_size=128,simulate=False):
     """
     Main AlphaZero training loop.
     """
@@ -477,7 +477,8 @@ def train_alpha_zero(sim_class, iterations=10, games_per_iter=1, model=None, dep
                 model=model,
                 simulations=depth,
                 temp=temperature,
-                max_memory_size=max_memory_size // games_per_iter
+                max_memory_size=max_memory_size // games_per_iter,
+                simulate=simulate
             )
             memory.extend(game_data)
 
