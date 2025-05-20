@@ -1,255 +1,214 @@
-from copy import deepcopy
 
 import numpy as np
-from Simple_Simulator import SimpleTicTacToe
-from Eval import evaluate_tic_tac_toe
-from UltimateToeFile import UltimateToe
-from Simple_Simulator import SimpleTicTacToe
+import random
+
 
 
 class MonteSearch:
-    def __init__(self,state,parent=None,sim_class=SimpleTicTacToe):
-        self.state = sim_class(state)
+    def __init__(self, state, parent=None, sim_class=None):
+        self.state = sim_class(state) if sim_class else state
         self.parent = parent
         self.children = {}
         self.visits = 0
         self.total_reward = 0
-        self.untried_moves = [move for move in state.get_legal_moves()]
+        self.untried_moves = [move for move in self.state.get_legal_moves()]
         self.class_type = sim_class
+
     def get_best_move(self):
+        if not self.children:
+            return None
         best_move = max(self.children.keys(), key=lambda move: self.children[move].visits)
         return best_move
 
-    def visualise_board(self):
-        if self.class_type == SimpleTicTacToe:
-            return self.state.board
-        elif self.class_type == UltimateToe:
-            board = np.zeros((9,9))
-            for i in range(9):
-                row,col = divmod(i,3)
-                board[int(row * 3): int(row*3 + 3),int(col * 3):int(col*3 + 3)] = \
-                    self.state.small_boards[i].board
+    def get_board_prob_val(self):
+        total_visits = sum([self.children[move].visits for move in self.children.keys()])
+        probabilities = {}
 
-        return board
+        for move in sorted(self.children.keys()):
+            probabilities[move] = self.children[move].visits / total_visits
 
-    @staticmethod
-    def get_state_probabilities_simple(root):
-        probabilities = np.zeros((3, 3))
+        board = self.state.visualise_board()
+        value = self.total_reward / total_visits
 
-        total_visits = sum([root.children[move].visits for move in root.children.keys()])
-        for move in root.children.keys():
-            row, col = divmod(move, 3)
+        return board,probabilities,value
 
-            probabilities[row, col] = root.children[move].visits / total_visits
-
-        return root.state.board * root.state.current_player, probabilities,abs(root.total_reward/root.visits)
-
-    @staticmethod
-    def ucb1(node, c=np.sqrt(2)):  # c is the exploration constant (sqrt(2) is common)
-        if node.visits == 1:
-            return float('inf')  # Always explore unvisited nodes
-        exploitation = node.total_reward / node.visits
-        exploration = c * np.sqrt(np.log(node.parent.visits) / node.visits)
-        return exploitation + exploration
+def ucb1(node, c=np.sqrt(2)):
+    if node.visits == 0:
+        return float('inf')
+    exploitation = node.total_reward / node.visits
+    exploration = c * np.sqrt(np.log(node.parent.visits) / node.visits)
+    return exploitation + exploration
 
 
-    def ucb1_with_eval(self,node, current_player, c=np.sqrt(2)):  # c is the exploration constant (sqrt(2) is common)
-        if node.visits == 1:
-            return float('inf')  # Always explore unvisited nodes
-        exploitation = abs(node.total_reward) / node.visits
-        exploration = c * np.sqrt(np.log(node.parent.visits) / node.visits)
+def backpropagate(node, result):
+    while node is not None:
+        node.visits += 1
+        node.total_reward += result
+        node = node.parent
+        result = -result
 
-        res = exploitation + exploration
-        return res
-    @staticmethod
-    def backpropagate_deprecated(node, result):
-        condition = True
-        while condition:
-            node.visits += 1
-            if result * node.state.current_player < 0:
-                node.total_reward += abs(result)  # result is +1, -1, or 0 for draw
-            if node.parent is not None:
-                node = node.parent
-            else:
-                condition = False
-        return node
 
-    @staticmethod
-    def backpropagate(node, result):
-        condition = True
-        while condition:
-            node.visits += 1
-            if result * node.state.current_player < 0.0:
-                node.total_reward += abs(result)  # Reward the current player's win
-            else:
-                node.total_reward -= abs(result)  # Penalize the current player's loss
-            if node.parent is not None:
-                node = node.parent
-            else:
-                condition = False
-        return node
+def expand_node(node, sim_class):
 
-    @staticmethod
-    def expand_node(node, sim_class):
-        if node.state.get_legal_moves() or not node.state.is_terminal():
-            index = np.random.choice(np.arange(len(node.untried_moves)))
-            move = node.untried_moves[index]
-            node.untried_moves.remove(move)
-            next_state = sim_class(deepcopy(node.state).step_forward(move))
-            next_state.current_player *= -1
-            child_node = MonteSearch(next_state, sim_class=sim_class, parent=node)
-            node.children[move] = child_node
-            return child_node
-        return None
-    @staticmethod
-    def simulate(state, simulations, sim_class):
-        rewards = 0
+    # Choose a random untried move
+    move = random.choice(node.untried_moves)
+    node.untried_moves.remove(move)
+
+    new_state = sim_class(node.state)
+    new_state.step_forward(move)
+    new_state.current_player *= -1  # Switch player after move
+
+    child_node = MonteSearch(new_state, parent=node, sim_class=sim_class)
+    node.children[move] = child_node
+    return child_node
+
+
+def simulate(state, sim_class, rollouts=1):
+    """Run a single simulation to the end and return result."""
+
+    parents_player = -state.current_player
+    total = 0
+    for _ in range(rollouts):
         game = sim_class(state)
-        for i in range(simulations):
-            game.reset(state)
-            rewards += game.simulate()
-        return rewards / simulations
+        # Play random moves until terminal
+        while not game.is_terminal():
+            legal_moves = game.get_legal_moves()
+            if not legal_moves:
+                break
 
-    @staticmethod
-    def select_best_node_ucb(node , c=np.sqrt(2)):
-            return max(node.children.values(), key=lambda n: MonteSearch.ucb1(n, c))
+            move = random.choice(legal_moves)
+            game.step_forward(move)
+            game.current_player *= -1
 
-    @staticmethod
-    def select_best_node_ucb_with_eval(node, current_player, c=np.sqrt(2)):
-            return max(node.children.values(), key=lambda n: node.ucb1_with_eval(n, current_player, c))
-    @staticmethod
-    def mcts_search(root, sim_class, deepness=20, simulations=100, c=np.sqrt(2), selection_func=None,eval = False):
-        for i in range(deepness):
-            node = root
-            # Selection
-            while node.children and not node.untried_moves:
-                if selection_func is None:
-                    node = max(node.children.values(), key=lambda n: MonteSearch.ucb1(n, c))
-                else:
-                    node = selection_func(node)
-                    # Check terminal state before expansion
-            if node.state.is_terminal():
-                result = node.state.winner  # Get the game result
-                if result == -5:
-                    result = 0
-                node = MonteSearch.backpropagate(node, result)
-                continue
-            # Expansion
-            child = MonteSearch.expand_node(node, sim_class)
-            if child:
-                node = child
-            # Simulation
-            result = MonteSearch.simulate(node.state, simulations, sim_class)
-
-            if eval:
-                if evaluate_tic_tac_toe(root.state.current_player,node.state.board) \
-                        and not  \
-                    evaluate_tic_tac_toe(-root.state.current_player,node.state.board):
-                    result *= 2
-
-            node = MonteSearch.backpropagate(node, result)
-        return root
-
-    @staticmethod
-    def get_state_probabilities(root):
-
-        probabilities = np.zeros((9, 9))
-        total_visits = 0
-        for move in root.children.keys():
-            total_visits += root.children[move].visits
-        for move in root.children.keys():
-            big_row, big_col = divmod(move[0], 3)
-            small_row, small_col = divmod(move[1], 3)
-            current_subboard = probabilities[big_row * 3: big_row * 3 + 3, big_col * 3: big_col * 3 + 3]
-
-            current_subboard[small_row, small_col] = root.children[move].visits / total_visits
-
-        board = root.visualise_board()
-        not_legal_moves = np.ones((81))
-
-        for key in root.children.keys():
-            numba = (key[0] // 3) * 27 + (key[1] // 3) * 9 + (key[0] % 3) * 3 + (key[1] % 3)
-            not_legal_moves[numba] = 0
-
-        not_legal_moves = not_legal_moves.reshape((9,9))
-
-        return board,not_legal_moves,probabilities,abs(root.total_reward/root.visits)
+        # Return result from parent player's perspective
+        if game.winner == parents_player:
+            total += 1.0
+        elif game.winner == -parents_player:
+            total += -1.0
+        else:  # Draw
+            total -= 0.
+    return total / rollouts
 
 
-class MonteSearchModel:
-    def __init__(self, deepness=20, simulations=1, c=np.sqrt(2),
-                 sim_class=SimpleTicTacToe,eval=False):
-        game = sim_class()
-        self.tree = MonteSearch(game, parent=None, sim_class=sim_class)
-        self.tree.mcts_search(root=self.tree,
-                              sim_class=sim_class,
-                              deepness=deepness,
-                              simulations=simulations,
-                              eval=eval)
-        self.deepness = deepness
-        self.simulations = simulations
+def mcts_search(root, sim_class, depth=1000, c=np.sqrt(2),rollouts=1):
+    for _ in range(depth):
+        node = root
+
+        # SELECTION
+        while node.untried_moves == [] and node.children:
+            node = max(node.children.values(), key=lambda n: ucb1(n, c))
+
+        # EXPANSION
+        if node.untried_moves and not node.state.is_terminal():
+            node = expand_node(node, sim_class)
+
+        # SIMULATION
+        if node:
+            result = simulate(node.state, sim_class,rollouts)
+
+            # BACKPROPAGATION: Update all nodes with result
+            backpropagate(node, result)
+
+    return root
+
+
+class MonteCarloPlayer:
+    def __init__(self, sim_class, iterations=1000, c=np.sqrt(2),rollouts=1):
         self.sim_class = sim_class
+        self.iterations = iterations
         self.c = c
-        self.eval = eval
+        self.rollouts = rollouts
 
     def next_move(self, state):
+        if state.is_terminal() or not state.get_legal_moves():
+            return None
 
-        game = self.sim_class(state)
+        # Create a fresh search tree with the current state
+        root = MonteSearch(state, sim_class=self.sim_class)
 
-        self.tree = MonteSearch(game, sim_class=self.sim_class)
+        # Run MCTS to determine the best move
+        root = mcts_search(
+            root=root,
+            sim_class=self.sim_class,
+            depth=self.iterations,
+            c=self.c,
+            rollouts = self.rollouts
+        )
+        board,probabilities,value = root.get_board_prob_val()
+        print(board)
+        print(probabilities)
+        print(value)
 
-        self.tree = MonteSearch.mcts_search(self.tree, self.sim_class,
-                                            deepness=self.deepness,
-                                            simulations=self.simulations,
-                                            eval=self.eval
-                                            )
-
-        if not state.is_terminal() and len(self.tree.children) > 0:
-            my_move = self.tree.get_best_move()
-            state.step_forward(my_move)
-
-            return my_move
-        return False
-
-
-
-"""
-from monte_carlo_tree_search import RandomModel
-from UltimateToeFile import UltimateToe
-sim_class = SimpleTicTacToe
-
-UpgradedModel = MonteSearchModel(sim_class=sim_class,deepness=100,simulations=10,eval=False)
-OldModel = RandomModel()
+        # Get and return the best move
+        return root.get_best_move()
 
 
-upgraded_model_player = 1
-tot_games = 100
+# Usage example for testing
+if __name__ == '__main__':
+    from SimpleToeFile import SimpleTicTacToe
+    from UltimateToeFile import UltimateToe
 
-OldModel_score = 0
-UpgradedModel_score = 0
-for i in range(tot_games):
-    game = sim_class()
+    game = SimpleTicTacToe()
 
-    if i % 2 == 0:
-        game.current_player *= -1
-        upgraded_model_player *= -1
 
-    while not game.is_terminal():
-        if int(game.current_player) == upgraded_model_player:
-            move = UpgradedModel.next_move(game)
+    mcts_player = MonteCarloPlayer(
+        sim_class=SimpleTicTacToe,
+        iterations=100,
+        c=1.4
+    )
+
+
+
+    class RandomPlayer:
+        def next_move(self, state):
+            legal_moves = state.get_legal_moves()
+            if legal_moves:
+                return random.choice(legal_moves)
+            return None
+
+
+    random_player = RandomPlayer()
+
+
+    mcts_wins = 0
+    random_wins = 0
+    draws = 0
+    total_games = 100
+
+    for i in range(total_games):
+        game = SimpleTicTacToe()
+        current_player = 1
+
+
+        if i % 2 == 0:
+            mcts_is_player = 1
         else:
-            move = OldModel.next_move(game)
+            mcts_is_player = -1
+            game.current_player = -1
 
-        a = game.board
-        # Ensure game.current_player is toggled in the main loop, not inside `next_move`
-        game.current_player *= -1
+        while not game.is_terminal():
+            if game.current_player == mcts_is_player:
+                move = mcts_player.next_move(game)
+            else:
+                move = random_player.next_move(game)
 
-    # Evaluate results
-    if game.winner == -upgraded_model_player:
-        OldModel_score += 1
-    elif game.winner == upgraded_model_player:
-        UpgradedModel_score += 1
+            if move is None:
+                break
 
-    print(f'game numba = {i}: UpgradedModel = {UpgradedModel_score}, OldModel = {OldModel_score}')
+            game.step_forward(move)
+            game.current_player *= -1
 
-print(f'perc = {UpgradedModel_score/tot_games}')"""
+        # Determine winner
+        if game.winner == mcts_is_player:
+            mcts_wins += 1
+        elif game.winner == -mcts_is_player:
+            random_wins += 1
+        else:
+            draws += 1
+
+        print(f"Game {i + 1}: MCTS={mcts_wins}, Random={random_wins}, Draws={draws}")
+
+    print(f"\nFinal results after {total_games} games:")
+    print(f"MCTS wins: {mcts_wins} ({mcts_wins / total_games * 100:.1f}%)")
+    print(f"Random wins: {random_wins} ({random_wins / total_games * 100:.1f}%)")
+    print(f"Draws: {draws} ({draws / total_games * 100:.1f}%)")

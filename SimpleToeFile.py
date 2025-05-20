@@ -1,7 +1,8 @@
 import numpy as np
 import numba
+from game_class import Game
 
-class SimpleTicTacToe():
+class SimpleTicTacToe(Game):
     def __init__(self,game = None):
         if game is None:
             self.current_player = 1
@@ -42,6 +43,9 @@ class SimpleTicTacToe():
 
     def get_legal_moves(self):
         return self.legal_moves
+
+    def visualise_board(self):
+        return self.board
 
     @staticmethod
     @numba.jit(nopython=True)
@@ -89,8 +93,6 @@ class SimpleTicTacToe():
             self.winner = self.check_board_win(self.board)
             self.moves.append(action)
             self.turns.append(self.current_player)
-            #self.current_player *= -1
-
         return self
 
     @staticmethod
@@ -152,18 +154,10 @@ class SimpleTicTacToe():
         return self.legal_moves
 
 
-# to see smart move:
-    # first check that the opponent is not winnning in the next move
-
-    # if this is the case then that is indeed the smartest move, to avoid is winning.
-
-    # else, if this is not the case there might be a possibility that the current player has a winning move
-
-
     def simulate(self):
         self.random_self_play()
         if self.winner == -5:
-            return 0#np.random.choice([-1,1])
+            return 0
         return self.winner
 
     def random_self_play(self):
@@ -172,22 +166,11 @@ class SimpleTicTacToe():
         terminal = self.is_terminal()
         while not terminal:
             smart_legal_moves = self.legal_moves
-
             action = np.random.choice(smart_legal_moves)
             self.step_forward(action)
             self.current_player *= -1
             terminal = self.is_terminal()
 
-    def guided_random_self_play(self):
-
-        terminal = self.is_terminal()
-        while not terminal:
-            smart_legal_moves = self.see_smart_move()
-
-            action = np.random.choice(smart_legal_moves)
-            self.step_forward(action)
-            self.current_player *= -1
-            terminal = self.is_terminal()
 
     def get_board(self):
         return self.board

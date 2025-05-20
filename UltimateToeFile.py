@@ -1,7 +1,8 @@
-from Simple_Simulator import SimpleTicTacToe
+from SimpleToeFile import SimpleTicTacToe
 import numpy as np
 from copy import deepcopy
-
+from Utils import from_int_to_tuple, from_numpy_to_onehot, board_legal_moves
+import torch
 
 class UltimateToe(SimpleTicTacToe):
     def __init__(self, game=None):
@@ -49,6 +50,37 @@ class UltimateToe(SimpleTicTacToe):
             return True
         else:
             return False
+
+    def compute_valid_moves(self,board,last_move):
+        pass
+
+    def to_tensor(self,return_flipped=False):
+        board = self.get_board()
+        model_in = from_numpy_to_onehot(board)
+        if len(self.moves) > 0:
+            last = self.moves[-1]
+            last_val_on_board = board_legal_moves(board, last)
+        else:
+            last = (-1, -1)
+            last_val_on_board = board_legal_moves(board, last)
+        last_val_tensor = torch.tensor(last_val_on_board, dtype=model_in.dtype)
+
+        model_in_direct = torch.cat([model_in, last_val_tensor.unsqueeze(0).unsqueeze(0)], dim=1)
+
+        if return_flipped:
+            board = self.get_board() * -1
+            model_in = from_numpy_to_onehot(board)
+            if len(self.moves) > 0:
+                last = self.moves[-1]
+                last_val_on_board = board_legal_moves(board, last)
+            else:
+                last = (-1, -1)
+                last_val_on_board = board_legal_moves(board, last)
+            last_val_tensor = torch.tensor(last_val_on_board, dtype=model_in.dtype)
+
+            model_in_flipped = torch.cat([model_in, last_val_tensor.unsqueeze(0).unsqueeze(0)], dim=1)
+            return model_in_direct,model_in_flipped
+        return model_in_direct
 
     def step_forward(self,move : tuple):
 
@@ -99,13 +131,13 @@ class UltimateToe(SimpleTicTacToe):
             self.turns.append(self.current_player)
             self.current_player *= -1
             terminal = self.is_terminal()
-            #visual = self.visualise_board()
-            #print(visual)
+
+
 
     def simulate(self):
         self.random_self_play()
         if self.winner == -5:
-            return 0#np.random.choice([-1,1])
+            return 0
         return self.winner
 
     def determine_bias_random_game(self,nsim = 1000):
@@ -129,7 +161,7 @@ class UltimateToe(SimpleTicTacToe):
                     int(initial_col * 3):int(initial_col * 3 +3)] = small_board.board
         return visual_board
 
-    def give_board(self):
+    def get_board(self):
         board = np.zeros((9,9))
         for i,miniboard in enumerate(self.small_boards):
             big_row,big_col = divmod(i,3)
@@ -137,7 +169,3 @@ class UltimateToe(SimpleTicTacToe):
         return board
 
 
-game_ = UltimateToe()
-
-game_.random_self_play()
-#bias = game_.determine_bias_random_game(nsim = 10000)
